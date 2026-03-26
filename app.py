@@ -260,7 +260,7 @@ for k, v in {
 # SIDEBAR
 # ═══════════════════════════════════════════════════════════════════════════════
 with st.sidebar:
-    st.markdown("## 🫀 HeartLink")
+    st.markdown("## 💚 HeartLink")
     st.markdown("*AI Elderly Health Monitor**")
     st.markdown("---")
 
