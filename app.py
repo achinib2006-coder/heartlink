@@ -8,7 +8,9 @@ import time
 import json
 import os
 import random
-
+import requests  # Required for Telegram alerts
+from deepface import DeepFace
+import cv2
 # ─── Page Config ───────────────────────────────────────────────────────────────
 st.set_page_config(
     page_title="HeartLink — Elderly Health AI",
@@ -217,26 +219,17 @@ def predict_risk(bp_sys, bp_dia, sugar, heart_rate, age, has_diabetes, has_hyper
     return level, score, flags
 
 # ─── SMS via Twilio ─────────────────────────────────────────────────────────────
-def send_sms_alert(patient_name, risk_level, score, bp_sys, bp_dia, sugar, hr,
-                   account_sid, auth_token, from_number, to_number):
+def send_telegram_alert(message):
+    # Get these from @BotFather and @userinfobot on Telegram
+    token = st.secrets["TELEGRAM_TOKEN"]
+    chat_id = st.secrets["TELEGRAM_CHAT_ID"]
+    
+    url = f"https://api.telegram.org/bot{token}/sendMessage?chat_id={chat_id}&text={message}"
     try:
-        from twilio.rest import Client
-        client = Client(account_sid, auth_token)
-        body = (
-            f"🚨 HEARTLINK HEALTH ALERT 🚨\n"
-            f"Patient: {patient_name}\n"
-            f"Risk Level: {risk_level} (Score: {score}/100)\n"
-            f"BP: {bp_sys}/{bp_dia} mmHg | Sugar: {sugar} mg/dL | HR: {hr} bpm\n"
-            f"Time: {datetime.now().strftime('%Y-%m-%d %H:%M')}\n"
-            f"⚠️ Please contact your patient immediately!"
-        )
-        msg = client.messages.create(body=body, from_=from_number, to=to_number)
-        return True, msg.sid
-    except ImportError:
-        return False, "Twilio not installed. Run: pip install twilio"
+        response = requests.get(url)
+        return response.status_code == 200, response.text
     except Exception as e:
         return False, str(e)
-
 # ─── Fake history generator ────────────────────────────────────────────────────
 def generate_history(n=14, base_bp=135, base_sugar=140, base_hr=78):
     records = []
@@ -276,7 +269,7 @@ with st.sidebar:
         "📥 Enter Health Data",
         "📊 Patient History",
         "😟 Facial Analysis",
-        "⚙️ SMS Settings",
+        "⚙️ Telegram Settings",
     ])
 
     st.markdown("---")
@@ -475,31 +468,25 @@ elif page == "📥 Enter Health Data":
                 st.markdown(f"- {f}")
 
         # HIGH RISK — trigger SMS prompt
+       # HIGH RISK — trigger Telegram prompt
         if risk == "HIGH":
             st.markdown("""
             <div class="alert-box">
                 <h3 style="color:#842029;margin:0">🚨 HIGH RISK DETECTED</h3>
                 <p style="color:#842029;margin:.5rem 0 0">
-                    AI has flagged this as a medical emergency. Send SMS alert immediately.
+                    AI has flagged this as a medical emergency. Send Telegram alert immediately.
                 </p>
             </div>
             """, unsafe_allow_html=True)
 
-            if st.button("📱 Send Emergency SMS Alert Now"):
-                cfg = st.session_state.get("twilio_cfg", {})
-                if all(cfg.get(k) for k in ["sid","token","from","to"]):
-                    ok, info = send_sms_alert(
-                        st.session_state.patient_name, risk, score,
-                        bp_sys, bp_dia, sugar, heart_rate,
-                        cfg["sid"], cfg["token"], cfg["from"], cfg["to"]
-                    )
-                    if ok:
-                        st.success(f"✅ SMS sent! Message SID: {info}")
-                        st.session_state.sms_sent = True
-                    else:
-                        st.error(f"❌ SMS failed: {info}")
+            if st.button("📱 Send Emergency Telegram Alert Now"):
+                alert_msg = f"🚨 HEARTLINK ALERT\nPatient: {st.session_state.patient_name}\nStatus: {risk} RISK\nBP: {bp_sys}/{bp_dia}"
+                ok, info = send_telegram_alert(alert_msg)
+                if ok:
+                    st.balloons()
+                    st.success("✅ Alert sent to Telegram!")
                 else:
-                    st.warning("⚙️ Please configure Twilio credentials in **SMS Settings** first.")
+                    st.error(f"❌ Error: {info}")
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # PAGE: PATIENT HISTORY
@@ -566,101 +553,61 @@ elif page == "📊 Patient History":
 elif page == "😟 Facial Analysis":
     st.markdown('<div class="topbar"><div><h1>😟 Facial Discomfort Analysis</h1><div class="sub">AI detects pain or distress from facial expressions</div></div></div>', unsafe_allow_html=True)
 
-    st.info("📷 This module uses your webcam + DeepFace AI to detect emotions. In a live deployment, this runs continuously on a bedside tablet or smart camera.")
+    st.info("📷 This module uses your webcam + DeepFace AI to detect emotions and physical distress.")
 
     col1, col2 = st.columns([2, 1])
 
     with col1:
         st.markdown('<div class="sec-title">📸 Live Camera Feed</div>', unsafe_allow_html=True)
+        img_file = st.camera_input("Point camera at patient's face")
 
-        use_camera = st.toggle("Enable Webcam Analysis", value=False)
+        if img_file is not None:
+            # Convert to OpenCV format
+            file_bytes = np.asarray(bytearray(img_file.read()), dtype=np.uint8)
+            frame = cv2.imdecode(file_bytes, 1)
 
-        if use_camera:
-            img_file = st.camera_input("Point camera at patient's face")
+            with st.spinner("🤖 AI is analyzing facial tension..."):
+                try:
+                    # Actual AI Analysis
+                    result = DeepFace.analyze(frame, actions=["emotion"], enforce_detection=False)
+                    emotions = result[0]["emotion"]
+                    dominant = result[0]["dominant_emotion"]
 
-            if img_file is not None:
-                import PIL.Image, io
-                img = PIL.Image.open(img_file)
+                    # Discomfort Index = Sum of negative emotions
+                    discomfort_score = (emotions.get("fear",0) + emotions.get("sad",0) + 
+                                       emotions.get("angry",0) + emotions.get("disgust",0)) / 100.0
 
-                # Save temp
-                tmp_path = "/tmp/rysera_face.jpg"
-                img.save(tmp_path)
+                    st.markdown(f"""
+                    <div class="card">
+                        <div class="sec-title">🧠 AI Emotion Result</div>
+                        <p><b>Dominant Emotion:</b> {dominant.upper()}</p>
+                        <p><b>Discomfort Index:</b> {discomfort_score*100:.1f}%</p>
+                    </div>
+                    """, unsafe_allow_html=True)
 
-                with st.spinner("🤖 Analysing facial expression..."):
-                    try:
-                        from deepface import DeepFace
-                        result = DeepFace.analyze(tmp_path, actions=["emotion"], enforce_detection=False)
-                        emotions = result[0]["emotion"]
-                        dominant = result[0]["dominant_emotion"]
+                    # Visualization
+                    em_df = pd.DataFrame(list(emotions.items()), columns=["Emotion","Score"])
+                    fig = px.bar(em_df, x="Emotion", y="Score", color="Score",
+                                 color_continuous_scale=["#d8f3dc","#f4a261","#e63946"])
+                    fig.update_layout(paper_bgcolor="white", plot_bgcolor="white", height=280, showlegend=False)
+                    st.plotly_chart(fig, use_container_width=True)
 
-                        # Discomfort = fear + sad + angry + disgust
-                        discomfort_score = (
-                            emotions.get("fear",0) +
-                            emotions.get("sad",0) +
-                            emotions.get("angry",0) +
-                            emotions.get("disgust",0)
-                        ) / 100.0
+                    # Trigger Emergency Alert if score is high
+                    if discomfort_score > 0.5:
+                        st.markdown('<div class="alert-box"><b>🚨 High discomfort detected!</b></div>', unsafe_allow_html=True)
+                        if st.button("📢 Alert Caregiver via Telegram"):
+                            msg = f"⚠️ DISCOMFORT ALERT: {st.session_state.patient_name} shows high distress ({discomfort_score*100:.1f}%)"
+                            ok, info = send_telegram_alert(msg)
+                            if ok: st.success("✅ Telegram alert sent!")
 
-                        st.markdown(f"""
-                        <div class="card">
-                            <div class="sec-title">🧠 Emotion Analysis Result</div>
-                            <p><b>Dominant Emotion:</b> {dominant.upper()}</p>
-                            <p><b>Discomfort Index:</b> {discomfort_score*100:.1f}%</p>
-                        </div>
-                        """, unsafe_allow_html=True)
-
-                        # Emotion bars
-                        em_df = pd.DataFrame(list(emotions.items()), columns=["Emotion","Score"])
-                        fig = px.bar(em_df, x="Emotion", y="Score",
-                                     color="Score",
-                                     color_continuous_scale=["#d8f3dc","#f4a261","#e63946"])
-                        fig.update_layout(paper_bgcolor="white",plot_bgcolor="white",
-                                          font_family="DM Sans",height=280,
-                                          showlegend=False)
-                        st.plotly_chart(fig, use_container_width=True)
-
-                        if discomfort_score > 0.5:
-                            st.markdown("""
-                            <div class="alert-box">
-                                <b>🚨 High discomfort detected!</b><br>
-                                Patient may be in pain or distress. Consider triggering a health check.
-                            </div>
-                            """, unsafe_allow_html=True)
-
-                    except ImportError:
-                        # Simulate for demo
-                        st.warning("DeepFace not installed — showing simulated demo output.")
-                        emotions_demo = {
-                            "happy":5.2,"sad":18.3,"angry":12.1,
-                            "fear":22.4,"surprise":8.0,"disgust":9.0,"neutral":25.0
-                        }
-                        dominant_demo = "neutral"
-                        discomfort_demo = (22.4+18.3+12.1+9.0)/100
-
-                        st.markdown(f"""
-                        <div class="card">
-                            <div class="sec-title">🧠 Emotion Analysis (Simulated)</div>
-                            <p><b>Dominant Emotion:</b> {dominant_demo.upper()}</p>
-                            <p><b>Discomfort Index:</b> {discomfort_demo*100:.1f}%</p>
-                        </div>
-                        """, unsafe_allow_html=True)
-
-                        em_df = pd.DataFrame(list(emotions_demo.items()), columns=["Emotion","Score"])
-                        fig = px.bar(em_df, x="Emotion", y="Score",
-                                     color="Score",
-                                     color_continuous_scale=["#d8f3dc","#f4a261","#e63946"])
-                        fig.update_layout(paper_bgcolor="white",plot_bgcolor="white",
-                                          font_family="DM Sans",height=280,showlegend=False)
-                        st.plotly_chart(fig, use_container_width=True)
-
-                    except Exception as e:
-                        st.error(f"Analysis error: {e}")
+                except Exception as e:
+                    st.error(f"Analysis error: {e}")
         else:
             st.markdown("""
-            <div class="face-card">
+            <div class="face-card" style="background:#2d8653; padding:2rem; border-radius:15px; text-align:center; color:white">
                 <div style="font-size:4rem">📷</div>
-                <h3 style="color:white">Camera is Off</h3>
-                <p style="color:rgba(255,255,255,.8)">Toggle the switch above to enable facial analysis</p>
+                <h3>Camera is Standby</h3>
+                <p>Capture a photo above to start AI analysis</p>
             </div>
             """, unsafe_allow_html=True)
 
@@ -672,7 +619,7 @@ elif page == "😟 Facial Analysis":
                 <b>1. Capture</b><br>Webcam takes a photo of the patient's face<br><br>
                 <b>2. Analyse</b><br>DeepFace AI detects 7 emotions: happy, sad, angry, fear, surprise, disgust, neutral<br><br>
                 <b>3. Score</b><br>A <i>discomfort index</i> is calculated from negative emotions<br><br>
-                <b>4. Alert</b><br>If discomfort &gt; 50%, an alert is suggested to the caregiver<br><br>
+                <b>4. Alert</b><br>If discomfort > 50%, an alert is sent via Telegram<br>
             </p>
         </div>
         <div class="card">
@@ -690,50 +637,41 @@ elif page == "😟 Facial Analysis":
 # PAGE: SMS SETTINGS
 # ═══════════════════════════════════════════════════════════════════════════════
 elif page == "⚙️ SMS Settings":
-    st.markdown('<div class="topbar"><div><h1>⚙️ SMS Alert Settings</h1><div class="sub">Configure Twilio for live emergency alerts</div></div></div>', unsafe_allow_html=True)
+    st.markdown('<div class="topbar"><div><h1>⚙️ Alert Settings</h1><div class="sub">Configure Telegram for live emergency alerts</div></div></div>', unsafe_allow_html=True)
 
     st.markdown("""
     <div class="card">
-        <div class="sec-title">📱 Twilio Configuration</div>
+        <div class="sec-title">📱 Telegram Configuration</div>
         <p style="color:#555;font-size:.9rem">
-            Get your credentials at <b>console.twilio.com</b> — free trial gives you $15 credit.
+            Use <b>@BotFather</b> on Telegram to get your Token and <b>@userinfobot</b> to get your Chat ID.
         </p>
     </div>
     """, unsafe_allow_html=True)
 
-    cfg = st.session_state.get("twilio_cfg", {})
-
-    with st.form("twilio_form"):
-        sid   = st.text_input("Account SID",   value=cfg.get("sid",""),   type="password", placeholder="ACxxxxxxxxxxxxxxxx")
-        token = st.text_input("Auth Token",     value=cfg.get("token",""), type="password", placeholder="your_auth_token")
-        frm   = st.text_input("From Number",   value=cfg.get("from",""),  placeholder="+1415XXXXXXX (your Twilio number)")
-        to    = st.text_input("To Number",     value=cfg.get("to",""),    placeholder="+94XXXXXXXXX (recipient)")
+    with st.form("telegram_form"):
+        # Use placeholders instead of showing your actual keys as labels
+        token = st.text_input("Telegram Bot Token", value=st.secrets.get("TELEGRAM_TOKEN", ""), type="password")
+        chat_id = st.text_input("Telegram Chat ID", value=st.secrets.get("TELEGRAM_CHAT_ID", ""))
 
         c1, c2 = st.columns(2)
         with c1:
             save = st.form_submit_button("💾 Save Settings", use_container_width=True)
         with c2:
-            test = st.form_submit_button("📤 Send Test SMS",  use_container_width=True)
+            test = st.form_submit_button("📤 Send Test Alert", use_container_width=True)
 
-    if save or test:
-        st.session_state.twilio_cfg = {"sid":sid,"token":token,"from":frm,"to":to}
-        if save:
-            st.success("✅ Twilio settings saved!")
-
-        if test:
-            if all([sid, token, frm, to]):
-                with st.spinner("Sending test SMS..."):
-                    ok, info = send_sms_alert(
-                        st.session_state.patient_name, "TEST", 0,
-                        120, 80, 100, 72,
-                        sid, token, frm, to
-                    )
-                if ok:
-                    st.success(f"✅ Test SMS sent! SID: {info}")
+    if save:
+        st.success("✅ Settings updated!")
+    
+    if test:
+        if token and chat_id:
+            with st.spinner("Sending test alert..."):
+                url = f"https://api.telegram.org/bot{token}/sendMessage?chat_id={chat_id}&text=🔔 HeartLink: Test Successful!"
+                res = requests.get(url)
+                if res.status_code == 200:
+                    st.success("✅ Test Alert sent! Check your Telegram.")
                 else:
-                    st.error(f"❌ Failed: {info}")
-            else:
-                st.warning("Please fill in all fields first.")
+                    st.error(f"❌ Failed: {res.text}")
+            
 
     st.markdown("""
     <div class="card" style="margin-top:1.5rem">
