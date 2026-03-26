@@ -13,7 +13,7 @@ import requests  # Required for Telegram alerts
 # ─── Page Config ───────────────────────────────────────────────────────────────
 st.set_page_config(
     page_title="HeartLink — Elderly Health AI",
-    page_icon="🫀",
+    page_icon="💚",
     layout="wide",
     initial_sidebar_state="expanded"
 )
