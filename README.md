@@ -1,1 +1,6 @@
-# heartlink
+streamlit>=1.32.0
+plotly>=5.20.0
+pandas>=2.0.0
+numpy>=1.26.0
+twilio>=9.0.0
+Pillow>=10.0.0
