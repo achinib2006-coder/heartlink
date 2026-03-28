@@ -263,7 +263,7 @@ for k, v in {
 # SIDEBAR
 # ═══════════════════════════════════════════════════════════════════════════════
 with st.sidebar:
-    st.markdown("## 🫀 HeartLink")
+    st.markdown("## 💚 HeartLink")
     st.markdown("*AI Elderly Health Monitor**")
     st.markdown("---")
 
@@ -295,7 +295,7 @@ if page == "🏠 Dashboard":
     st.markdown("""
     <div class="topbar">
         <div>
-            <h1>🫀 HeartLink Health AI</h1>
+            <h1>💚 HeartLink Health AI</h1>
             <div class="sub">AI-Based Smart Elderly Health Risk Prediction & Alert System</div>
         </div>
     </div>
