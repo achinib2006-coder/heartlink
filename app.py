@@ -477,19 +477,17 @@ elif page == "📥 Enter Health Data":
             <div class="alert-box">
                 <h3 style="color:#842029;margin:0">🚨 HIGH RISK DETECTED</h3>
                 <p style="color:#842029;margin:.5rem 0 0">
-                    AI has flagged this as a medical emergency. Send Telegram alert immediately.
+                    AI has flagged this as a medical emergency. Sending Telegram alert automatically...
                 </p>
             </div>
             """, unsafe_allow_html=True)
-
-            if st.button("📱 Send Emergency Telegram Alert Now"):
-                alert_msg = f"🚨 HEARTLINK ALERT\nPatient: {st.session_state.patient_name}\nStatus: {risk} RISK\nBP: {bp_sys}/{bp_dia}"
-                ok, info = send_telegram_alert(alert_msg)
-                if ok:
-                    st.balloons()
-                    st.success("✅ Alert sent to Telegram!")
-                else:
-                    st.error(f"❌ Error: {info}")
+            alert_msg = f"🚨 HEARTLINK ALERT\nPatient: {st.session_state.patient_name}\nStatus: {risk} RISK\nBP: {bp_sys}/{bp_dia}\nSugar: {sugar} mg/dL\nHeart Rate: {heart_rate} bpm"
+            ok, info = send_telegram_alert(alert_msg)
+            if ok:
+                st.balloons()
+                st.success("✅ Emergency alert auto-sent to Telegram!")
+            else:
+                st.error(f"❌ Telegram Error: {info} — Please check ⚙️ Telegram Settings page!")
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # PAGE: PATIENT HISTORY
