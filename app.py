@@ -542,7 +542,7 @@ elif page == "📊 Patient History":
         st.plotly_chart(fig2, use_container_width=True)
 
     with tab3:
-        def highlight_vitals(row):
+def highlight_vitals(row):
     styles = [""] * len(row)
     cols = list(row.index)
     if "bp_sys" in cols and row["bp_sys"] >= 140:
