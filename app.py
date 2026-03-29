@@ -542,11 +542,19 @@ elif page == "📊 Patient History":
         st.plotly_chart(fig2, use_container_width=True)
 
     with tab3:
-        st.dataframe(df.set_index("date").style.highlight_between(
-            subset=["bp_sys"], left=140, right=300, color="#f8d7da"
-        ).highlight_between(
-            subset=["sugar"], left=180, right=600, color="#fff3cd"
-        ), use_container_width=True)
+        def highlight_vitals(row):
+    styles = [""] * len(row)
+    cols = list(row.index)
+    if "bp_sys" in cols and row["bp_sys"] >= 140:
+        styles[cols.index("bp_sys")] = "background-color: #f8d7da"
+    if "sugar" in cols and row["sugar"] >= 180:
+        styles[cols.index("sugar")] = "background-color: #fff3cd"
+    return styles
+
+st.dataframe(
+    df.set_index("date").style.apply(highlight_vitals, axis=1),
+    use_container_width=True
+)
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # PAGE: FACIAL ANALYSIS
